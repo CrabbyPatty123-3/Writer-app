@@ -1,0 +1,15 @@
+# Dependencies and build output
+/node_modules
+/.next
+/out
+/build
+
+# Next.js generates this from the installed version.
+/next-env.d.ts
+
+# Local configuration and operating-system files
+.env*
+!.env.example
+.DS_Store
+npm-debug.log*
+

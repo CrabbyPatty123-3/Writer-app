@@ -42,8 +42,12 @@ export const pageStyles: PageStyle[] = [
 export const initialDraft: DraftStory = {
   id: "lighthouse-keeper",
   title: "The Lighthouse Keeper",
-  genre: "Supernatural",
+  genres: ["Supernatural", "Mystery"],
   synopsis: "A keeper on a remote island discovers that the light is calling something home.",
+  coverColor: "#174f3b",
+  status: "draft",
+  createdAt: 1778000400000,
+  updatedAt: 1788508800000,
   activeChapterId: "chapter-2",
   activePageId: "page-2-1",
   style: pageStyles[0],
@@ -51,7 +55,7 @@ export const initialDraft: DraftStory = {
     {
       id: "chapter-1",
       title: "The Last Quiet Morning",
-      notes: "- Elias has kept the light for eleven years\n  - He never speaks about his father\n- Introduce the brass key",
+      notes: [{ id: "note-chapter-1-1", body: "- Elias has kept the light for eleven years\n  - He never speaks about his father\n- Introduce the brass key" }],
       pages: [
         {
           id: "page-1-1",
@@ -66,23 +70,68 @@ export const initialDraft: DraftStory = {
     {
       id: "chapter-2",
       title: "A Light Beneath the Water",
-      notes: "- The green light appears at low tide\n  - It should mirror the lighthouse beam\n- Mara arrives before the storm",
+      notes: [{ id: "note-chapter-2-1", body: "- The green light appears at low tide\n  - It should mirror the lighthouse beam\n- Mara arrives before the storm" }],
       pages: [{ id: "page-2-1", body: "" }],
     },
     {
       id: "chapter-3",
       title: "The Visitor",
-      notes: "",
+      notes: [],
       pages: [{ id: "page-3-1", body: "" }],
     },
     {
       id: "chapter-4",
       title: "What the Tide Returns",
-      notes: "",
+      notes: [],
       pages: [{ id: "page-4-1", body: "" }],
     },
   ],
 };
+
+export const initialBooks: DraftStory[] = [
+  initialDraft,
+  {
+    id: "paper-kingdom",
+    title: "The Paper Kingdom",
+    genres: ["Fantasy", "Young Adult"],
+    synopsis: "A bookbinder discovers that every unfinished story leaves a door open somewhere in the city.",
+    coverColor: "#496c5c",
+    status: "draft",
+    createdAt: 1775408400000,
+    updatedAt: 1788163200000,
+    activeChapterId: "paper-chapter-1",
+    activePageId: "paper-page-1",
+    style: pageStyles[1],
+    chapters: [
+      {
+        id: "paper-chapter-1",
+        title: "The Door in the Binding",
+        notes: [{ id: "note-paper-1", body: "- Establish the bindery at closing time\n- The first door should feel impossible, not frightening" }],
+        pages: [{ id: "paper-page-1", body: "By the time the last customer left, Liora had repaired eleven spines, replaced three endpapers, and found a blue door pressed between pages ninety-two and ninety-three." }],
+      },
+      { id: "paper-chapter-2", title: "A City Written Twice", notes: [], pages: [{ id: "paper-page-2", body: "" }] },
+      { id: "paper-chapter-3", title: "The Unfinished Queen", notes: [], pages: [{ id: "paper-page-3", body: "" }] },
+    ],
+  },
+  {
+    id: "small-hours",
+    title: "Notes from the Small Hours",
+    genres: ["Literary"],
+    synopsis: "Four strangers leave messages in the same library book over the course of one sleepless year.",
+    coverColor: "#252f2a",
+    status: "published",
+    createdAt: 1769875200000,
+    updatedAt: 1787558400000,
+    activeChapterId: "hours-chapter-3",
+    activePageId: "hours-page-3",
+    style: pageStyles[3],
+    chapters: [
+      { id: "hours-chapter-1", title: "Margins", notes: [], pages: [{ id: "hours-page-1", body: "The first note was written in pencil beside a sentence nobody ever underlined." }] },
+      { id: "hours-chapter-2", title: "Due Dates", notes: [], pages: [{ id: "hours-page-2", body: "By February, the handwriting had become familiar enough to recognize from across the reading room." }] },
+      { id: "hours-chapter-3", title: "The Last Reader", notes: [], pages: [{ id: "hours-page-3", body: "On the final night of the year, all four of them arrived before the library closed." }] },
+    ],
+  },
+];
 
 export const authors: Author[] = [
   {

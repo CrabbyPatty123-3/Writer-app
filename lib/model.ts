@@ -1,16 +1,24 @@
-export type View = "home" | "write" | "styles" | "explore";
+export type View = "home" | "library" | "write" | "explore";
 
 export type StoryPage = {
   id: string;
   body: string;
   image?: string;
   imageName?: string;
+  imageFit?: "contain" | "crop" | "fullscreen";
+  imagePositionX?: number;
+  imagePositionY?: number;
+};
+
+export type ChapterNote = {
+  id: string;
+  body: string;
 };
 
 export type Chapter = {
   id: string;
   title: string;
-  notes: string;
+  notes: ChapterNote[];
   pages: StoryPage[];
 };
 
@@ -27,8 +35,15 @@ export type PageStyle = {
 export type DraftStory = {
   id: string;
   title: string;
-  genre: string;
+  genres: string[];
   synopsis: string;
+  coverColor: string;
+  coverData?: string;
+  coverName?: string;
+  coverType?: string;
+  status: "draft" | "published";
+  createdAt: number;
+  updatedAt: number;
   activeChapterId: string;
   activePageId: string;
   style: PageStyle;

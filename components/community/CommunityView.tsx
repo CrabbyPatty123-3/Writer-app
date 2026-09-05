@@ -2,6 +2,7 @@
 
 import {
   ArrowRight,
+  BookOpenText,
   ChevronLeft,
   ChevronRight,
   Heart,
@@ -13,7 +14,8 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { Dispatch, FormEvent, SetStateAction, useState } from "react";
+import { Dispatch, FormEvent, SetStateAction, useRef, useState } from "react";
+import { useModalKeyboard } from "@/components/useModalKeyboard";
 import { authors, publishedStories } from "@/lib/seed";
 import type { Author, DraftStory, PublishedStory, SocialState, View } from "@/lib/model";
 
@@ -22,15 +24,26 @@ type Props = {
   draft: DraftStory;
   social: SocialState;
   setSocial: Dispatch<SetStateAction<SocialState>>;
+  query: string;
   onContinue: () => void;
+  onExplore: () => void;
 };
 
-export default function CommunityView({ mode, draft, social, setSocial, onContinue }: Props) {
+export default function CommunityView({ mode, draft, social, setSocial, query, onContinue, onExplore }: Props) {
   const [openStory, setOpenStory] = useState<PublishedStory | null>(null);
   const [openAuthor, setOpenAuthor] = useState<Author | null>(null);
   const [filter, setFilter] = useState("All");
   const genres = ["All", "Romance", "Fantasy", "Mystery", "Supernatural"];
-  const stories = filter === "All" ? publishedStories : publishedStories.filter((story) => story.genre === filter);
+  const normalizedQuery = query.trim().toLowerCase();
+  const modeStories = mode === "home"
+    ? publishedStories.filter((story) => social.following.includes(story.authorId))
+    : filter === "All" ? publishedStories : publishedStories.filter((story) => story.genre === filter);
+  const stories = normalizedQuery
+    ? modeStories.filter((story) => {
+        const author = authors.find((item) => item.id === story.authorId);
+        return `${story.title} ${story.genre} ${story.synopsis} ${author?.name ?? ""}`.toLowerCase().includes(normalizedQuery);
+      })
+    : modeStories;
   const currentChapter = draft.chapters.find((chapter) => chapter.id === draft.activeChapterId) ?? draft.chapters[0];
   const currentPageNumber = Math.max(1, currentChapter.pages.findIndex((page) => page.id === draft.activePageId) + 1);
 
@@ -49,7 +62,7 @@ export default function CommunityView({ mode, draft, social, setSocial, onContin
             <div className="continue-progress"><span>{draft.chapters.filter((chapter) => chapter.pages.some((page) => page.body)).length} / {draft.chapters.length}</span><small>chapters started</small></div>
           </button>
 
-          <div className="content-heading"><div><span className="eyebrow">FROM WRITERS YOU FOLLOW</span><h2>Fresh chapters</h2></div><button>View all <ArrowRight size={16} /></button></div>
+          <div className="content-heading"><div><span className="eyebrow">FROM WRITERS YOU FOLLOW</span><h2>Fresh chapters</h2></div><button onClick={onExplore}>View all <ArrowRight size={16} /></button></div>
         </>
       ) : (
         <div className="explore-heading"><span className="eyebrow">DISCOVER YOUR NEXT READ</span><h1>Explore stories</h1><p>New worlds, unfinished adventures, and writers worth following.</p><div className="genre-tabs">{genres.map((genre) => <button className={filter === genre ? "active" : ""} key={genre} onClick={() => setFilter(genre)}>{genre}</button>)}</div></div>
@@ -72,7 +85,16 @@ export default function CommunityView({ mode, draft, social, setSocial, onContin
         })}
       </div>
 
-      {openStory && <PublicReader story={openStory} social={social} setSocial={setSocial} onClose={() => setOpenStory(null)} onAuthor={() => setOpenAuthor(authors.find((author) => author.id === openStory.authorId)!)} />}
+      {!stories.length && (
+        <div className="community-empty">
+          <BookOpenText size={30} />
+          <h2>{mode === "home" ? "Your followed-writer shelf is quiet" : "No stories found"}</h2>
+          <p>{mode === "home" ? "Follow a writer in Explore and their stories will appear here." : "Try another genre or search term."}</p>
+          {mode === "home" && <button className="primary-button" onClick={onExplore}>Explore writers</button>}
+        </div>
+      )}
+
+      {openStory && <PublicReader story={openStory} social={social} setSocial={setSocial} onClose={() => setOpenStory(null)} onAuthor={() => { setOpenStory(null); setOpenAuthor(authors.find((author) => author.id === openStory.authorId)!); }} />}
       {openAuthor && <AuthorProfile author={openAuthor} stories={publishedStories.filter((story) => story.authorId === openAuthor.id)} following={social.following.includes(openAuthor.id)} onFollow={() => toggleFollow(openAuthor.id)} onClose={() => setOpenAuthor(null)} onStory={(story) => { setOpenAuthor(null); setOpenStory(story); }} />}
     </section>
   );
@@ -86,6 +108,8 @@ function PublicReader({ story, social, setSocial, onClose, onAuthor }: { story: 
   const disliked = social.disliked.includes(story.id);
   const rating = social.ratings[story.id] ?? 0;
   const comments = social.comments[story.id] ?? [];
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalKeyboard(panelRef, onClose);
 
   function react(kind: "like" | "dislike") {
     setSocial((current) => {
@@ -102,9 +126,9 @@ function PublicReader({ story, social, setSocial, onClose, onAuthor }: { story: 
   }
 
   return (
-    <div className="modal-backdrop reader-backdrop" role="dialog" aria-modal="true" aria-label={story.title}>
-      <div className="public-reader">
-        <header><button className="reader-back" onClick={onClose}><ChevronLeft size={18} /> Explore</button><div><strong>{story.title}</strong><button onClick={onAuthor}>by {author.name}</button></div><button className="icon-button" onClick={onClose}><X size={19} /></button></header>
+    <div className="modal-backdrop reader-backdrop" role="dialog" aria-modal="true" aria-labelledby={`reader-title-${story.id}`}>
+      <div className="public-reader" ref={panelRef}>
+        <header><button className="reader-back" onClick={onClose}><ChevronLeft size={18} /> Explore</button><div><strong id={`reader-title-${story.id}`}>{story.title}</strong><button onClick={onAuthor}>by {author.name}</button></div><button className="icon-button" onClick={onClose} aria-label="Close reader"><X size={19} /></button></header>
         <div className="public-reader-body">
           <section className="reading-stage">
             <div className="reading-meta"><span>{story.genre}</span><span>Chapter {chapterIndex + 1} of {story.chapters.length}</span></div>
@@ -119,9 +143,9 @@ function PublicReader({ story, social, setSocial, onClose, onAuthor }: { story: 
           </section>
           <aside className="engagement-panel">
             <button className="reader-author" onClick={onAuthor}><span className="avatar" style={{ background: author.accent }}>{author.initials}</span><span><strong>{author.name}</strong><small>{author.bio}</small></span></button>
-            <div className="reaction-row"><button className={liked ? "active" : ""} onClick={() => react("like")}><ThumbsUp size={18} /> {story.likes + (liked ? 1 : 0)}</button><button className={disliked ? "active dislike" : ""} onClick={() => react("dislike")}><ThumbsDown size={18} /> {story.dislikes + (disliked ? 1 : 0)}</button></div>
-            <div className="rating-box"><strong>Rate this story</strong><div>{[1, 2, 3, 4, 5].map((value) => <button aria-label={`Rate ${value} stars`} key={value} onClick={() => setSocial((current) => ({ ...current, ratings: { ...current.ratings, [story.id]: value } }))}><Star size={21} fill={value <= rating ? "currentColor" : "none"} /></button>)}</div><small>{rating ? `Your rating: ${rating}/5` : `${story.rating} average from ${story.ratingCount} readers`}</small></div>
-            <div className="comments-box"><h3>Reader comments <span>{comments.length}</span></h3><form onSubmit={submitComment}><input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Leave a thoughtful comment…" /><button>Post</button></form><div className="comments-list">{comments.map((item) => <div key={item.id}><span className="avatar tiny">{item.author.split(" ").map((part) => part[0]).join("").slice(0, 2)}</span><p><strong>{item.author}<small>{item.when}</small></strong>{item.body}</p></div>)}</div></div>
+            <div className="reaction-row"><button aria-label={liked ? "Remove like" : "Like story"} aria-pressed={liked} className={liked ? "active" : ""} onClick={() => react("like")}><ThumbsUp size={18} /> <span>{story.likes + (liked ? 1 : 0)}</span></button><button aria-label={disliked ? "Remove dislike" : "Dislike story"} aria-pressed={disliked} className={disliked ? "active dislike" : ""} onClick={() => react("dislike")}><ThumbsDown size={18} /> <span>{story.dislikes + (disliked ? 1 : 0)}</span></button></div>
+            <div className="rating-box"><strong>Rate this story</strong><div>{[1, 2, 3, 4, 5].map((value) => <button aria-label={`Rate ${value} stars`} aria-pressed={rating === value} key={value} onClick={() => setSocial((current) => ({ ...current, ratings: { ...current.ratings, [story.id]: value } }))}><Star size={21} fill={value <= rating ? "currentColor" : "none"} /></button>)}</div><small>{rating ? `Your rating: ${rating}/5` : `${story.rating} average from ${story.ratingCount} readers`}</small></div>
+            <div className="comments-box"><h3>Reader comments <span>{comments.length}</span></h3><form onSubmit={submitComment}><input aria-label="Write a comment" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Leave a thoughtful comment…" /><button type="submit">Post</button></form><div className="comments-list">{comments.map((item) => <div key={item.id}><span className="avatar tiny">{item.author.split(" ").map((part) => part[0]).join("").slice(0, 2)}</span><p><strong>{item.author}<small>{item.when}</small></strong>{item.body}</p></div>)}</div></div>
           </aside>
         </div>
       </div>
@@ -131,12 +155,14 @@ function PublicReader({ story, social, setSocial, onClose, onAuthor }: { story: 
 
 function AuthorProfile({ author, stories, following, onFollow, onClose, onStory }: { author: Author; stories: PublishedStory[]; following: boolean; onFollow: () => void; onClose: () => void; onStory: (story: PublishedStory) => void }) {
   const followerCount = author.followers + (following ? 1 : 0);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalKeyboard(panelRef, onClose);
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`${author.name}'s profile`}>
-      <div className="profile-modal">
-        <button className="modal-close" onClick={onClose}><X size={19} /></button>
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby={`author-title-${author.id}`}>
+      <div className="profile-modal" ref={panelRef}>
+        <button className="modal-close" onClick={onClose} aria-label="Close author profile"><X size={19} /></button>
         <span className="avatar profile-avatar" style={{ background: author.accent }}>{author.initials}</span>
-        <h2>{author.name}</h2><span>{author.handle}</span><p>{author.bio}</p>
+        <h2 id={`author-title-${author.id}`}>{author.name}</h2><span>{author.handle}</span><p>{author.bio}</p>
         <div className="profile-stats"><span><strong>{followerCount.toLocaleString()}</strong>Followers</span><span><strong>{stories.length}</strong>Published</span><span><strong>{stories.reduce((sum, story) => sum + story.likes, 0).toLocaleString()}</strong>Likes</span></div>
         <button className={`profile-follow ${following ? "following" : ""}`} onClick={onFollow}>{following ? <><Users size={17} /> Following</> : <><UserPlus size={17} /> Follow writer</>}</button>
         <div className="profile-books"><span className="eyebrow">PUBLISHED STORIES</span>{stories.map((story) => <button key={story.id} onClick={() => onStory(story)}><span style={{ background: story.cover }} /><div><strong>{story.title}</strong><small>{story.genre} · {story.rating} ★</small></div><ArrowRight size={16} /></button>)}</div>

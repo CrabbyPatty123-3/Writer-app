@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Writers' Room Prototype",
+  title: "Draftly",
   description: "A page-first writing and publishing prototype.",
 };
 

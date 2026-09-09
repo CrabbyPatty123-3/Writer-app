@@ -6,23 +6,23 @@ import {
   BookOpenCheck,
   Check,
   ChevronDown,
-  Crop,
   Eye,
   FilePlus2,
   Focus,
   GripVertical,
   ImagePlus,
+  Lock,
   LockKeyhole,
   Maximize2,
   MoreHorizontal,
-  Move,
   Pencil,
   Plus,
   Trash2,
+  Unlock,
   Upload,
   X,
 } from "lucide-react";
-import { ChangeEvent, Dispatch, DragEvent, FormEvent, KeyboardEvent, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, Dispatch, DragEvent, FormEvent, KeyboardEvent, SetStateAction, useMemo, useRef, useState } from "react";
 import { useModalKeyboard } from "@/components/useModalKeyboard";
 import GenrePicker from "./GenrePicker";
 import type { Chapter, ChapterNote, DraftStory, StoryPage } from "@/lib/model";
@@ -30,6 +30,7 @@ import type { Chapter, ChapterNote, DraftStory, StoryPage } from "@/lib/model";
 type Props = {
   draft: DraftStory;
   setDraft: Dispatch<SetStateAction<DraftStory>>;
+  saveStatus: string;
   focusMode: boolean;
   setFocusMode: Dispatch<SetStateAction<boolean>>;
   onEditBook: () => void;
@@ -88,8 +89,7 @@ function splitTextToFit(text: string, style: MeasureStyle) {
   return { pageText, overflow };
 }
 
-export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMode, onEditBook, onDeleteBook }: Props) {
-  const [saveStatus, setSaveStatus] = useState("Autosave on");
+export default function WriterWorkspace({ draft, setDraft, saveStatus, focusMode, setFocusMode, onEditBook, onDeleteBook }: Props) {
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
   const [pagePickerOpen, setPagePickerOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
@@ -98,12 +98,15 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
   const [draggedChapter, setDraggedChapter] = useState<string | null>(null);
   const [renameChapterId, setRenameChapterId] = useState<string | null>(null);
   const [deleteChapterId, setDeleteChapterId] = useState<string | null>(null);
-  const [imageEditPageId, setImageEditPageId] = useState<string | null>(null);
+  const [deleteNoteTarget, setDeleteNoteTarget] = useState<{ chapterId: string; noteId: string } | null>(null);
+  const [selectedImagePageId, setSelectedImagePageId] = useState<string | null>(null);
+  const [draggingImage, setDraggingImage] = useState(false);
   const [publishMessage, setPublishMessage] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const pageRef = useRef<HTMLElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const chapterTitleRef = useRef<HTMLDivElement>(null);
+  const imageDragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
 
   const activeChapter = useMemo(
     () => draft.chapters.find((chapter) => chapter.id === draft.activeChapterId) ?? draft.chapters[0],
@@ -111,13 +114,12 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
   );
   const activePageIndex = Math.max(0, activeChapter.pages.findIndex((page) => page.id === draft.activePageId));
   const activePage = activeChapter.pages[activePageIndex] ?? activeChapter.pages[0];
+  const activeChapterIndex = Math.max(0, draft.chapters.findIndex((chapter) => chapter.id === activeChapter.id));
+  const activeBookPageNumber = draft.chapters
+    .slice(0, activeChapterIndex)
+    .reduce((sum, chapter) => sum + chapter.pages.length, 0) + activePageIndex + 1;
   const totalPages = draft.chapters.reduce((sum, chapter) => sum + chapter.pages.length, 0);
   const completeChapters = draft.chapters.filter((chapter) => chapter.pages.some((page) => page.body.trim() || page.image)).length;
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSaveStatus("Saved just now"), 650);
-    return () => window.clearTimeout(timer);
-  }, [draft]);
 
   function updateChapter(chapterId: string, updater: (chapter: Chapter) => Chapter) {
     setDraft((current) => ({
@@ -134,6 +136,19 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
   }
 
   function handleBodyChange(value: string) {
+    if (activePageIndex > 0 && value === "" && !activePage.image) {
+      const previousPage = activeChapter.pages[activePageIndex - 1];
+      setDraft((current) => ({
+        ...current,
+        activePageId: previousPage.id,
+        chapters: current.chapters.map((chapter) => chapter.id === activeChapter.id
+          ? { ...chapter, pages: chapter.pages.filter((page) => page.id !== activePage.id) }
+          : chapter),
+      }));
+      setSelectedImagePageId(null);
+      return;
+    }
+
     const pageElement = pageRef.current;
     const input = textareaRef.current;
     if (!pageElement || !input) {
@@ -186,12 +201,16 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
 
   function chooseChapter(chapter: Chapter) {
     setDraft((current) => ({ ...current, activeChapterId: chapter.id, activePageId: chapter.pages[0].id }));
+    setOpenNoteId(null);
     setChapterMenu(null);
   }
 
   function goToPage(index: number) {
     const page = activeChapter.pages[index];
-    if (page) setDraft((current) => ({ ...current, activePageId: page.id }));
+    if (page) {
+      setDraft((current) => ({ ...current, activePageId: page.id }));
+      setSelectedImagePageId(null);
+    }
   }
 
   function startNextChapter() {
@@ -205,11 +224,10 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
   }
 
   function addChapter() {
-    const number = draft.chapters.length + 1;
     const pageId = uid("page");
     const chapter: Chapter = {
       id: uid("chapter"),
-      title: `Chapter ${number}`,
+      title: "",
       notes: [],
       pages: [{ id: pageId, body: "" }],
     };
@@ -219,6 +237,8 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
       activeChapterId: chapter.id,
       activePageId: pageId,
     }));
+    setOpenNoteId(null);
+    setSelectedImagePageId(null);
   }
 
   function renameChapter(chapterId: string, title: string) {
@@ -234,6 +254,10 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
       const nextActive = chapter.id === current.activeChapterId ? chapters[0] : chapters.find((item) => item.id === current.activeChapterId)!;
       return { ...current, chapters, activeChapterId: nextActive.id, activePageId: nextActive.pages[0].id };
     });
+    setOpenNoteId(null);
+    setSelectedImagePageId(null);
+    setDraggingImage(false);
+    imageDragRef.current = null;
     setDeleteChapterId(null);
     setChapterMenu(null);
   }
@@ -272,11 +296,13 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
         const pageId = uid("page");
         updateChapter(activeChapter.id, (chapter) => ({
           ...chapter,
-          pages: [...chapter.pages.slice(0, activePageIndex + 1), { id: pageId, body: "", image, imageName: file.name, imageFit: "contain", imagePositionX: 50, imagePositionY: 50 }, ...chapter.pages.slice(activePageIndex + 1)],
+          pages: [...chapter.pages.slice(0, activePageIndex + 1), { id: pageId, body: "", image, imageName: file.name, imageFit: "contain", imagePositionX: 50, imagePositionY: 50, imagePlacementX: 50, imagePlacementY: 72, imageLocked: false }, ...chapter.pages.slice(activePageIndex + 1)],
         }));
         setDraft((current) => ({ ...current, activePageId: pageId }));
+        setSelectedImagePageId(pageId);
       } else {
-        updatePage(activePage.id, (page) => ({ ...page, image, imageName: file.name, imageFit: "contain", imagePositionX: 50, imagePositionY: 50 }));
+        updatePage(activePage.id, (page) => ({ ...page, image, imageName: file.name, imageFit: "contain", imagePositionX: 50, imagePositionY: 50, imagePlacementX: 50, imagePlacementY: 72, imageLocked: false }));
+        setSelectedImagePageId(activePage.id);
       }
     };
     reader.readAsDataURL(file);
@@ -299,6 +325,95 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
   function deleteNote(chapterId: string, noteId: string) {
     updateChapter(chapterId, (chapter) => ({ ...chapter, notes: chapter.notes.filter((note) => note.id !== noteId) }));
     if (openNoteId === noteId) setOpenNoteId(null);
+    setDeleteNoteTarget(null);
+  }
+
+  function handleWorkspaceClick(event: React.MouseEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    const noteBranch = target.closest("[data-note-id]") as HTMLElement | null;
+    const isDeleteNoteButton = Boolean(target.closest("[data-delete-note]"));
+
+    if (noteBranch) {
+      if (!isDeleteNoteButton) {
+        const nextNoteId = noteBranch.dataset.noteId;
+        if (nextNoteId && nextNoteId !== openNoteId) setOpenNoteId(nextNoteId);
+      }
+    } else if (!target.closest(".chapter-note-button") && !target.closest(".modal-backdrop")) {
+      setOpenNoteId(null);
+    }
+
+    if (!target.closest(".page-image")) setSelectedImagePageId(null);
+  }
+
+  function handleImagePointerDown(event: React.PointerEvent<HTMLElement>) {
+    event.stopPropagation();
+    setSelectedImagePageId(activePage.id);
+    if (activePage.imageLocked || activePage.imageFit === "fullscreen" || (event.target as HTMLElement).closest(".page-image-controls")) return;
+
+    const figureRect = event.currentTarget.getBoundingClientRect();
+    imageDragRef.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - (figureRect.left + figureRect.width / 2),
+      offsetY: event.clientY - (figureRect.top + figureRect.height / 2),
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDraggingImage(true);
+  }
+
+  function handleImagePointerMove(event: React.PointerEvent<HTMLElement>) {
+    const drag = imageDragRef.current;
+    const page = pageRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !page) return;
+
+    const pageRect = page.getBoundingClientRect();
+    const figureRect = event.currentTarget.getBoundingClientRect();
+    const boundary = Math.min(28, pageRect.width * 0.055);
+    const halfWidth = figureRect.width / 2;
+    const halfHeight = figureRect.height / 2;
+    const minX = boundary + halfWidth;
+    const maxX = Math.max(minX, pageRect.width - boundary - halfWidth);
+    const minY = boundary + halfHeight;
+    const maxY = Math.max(minY, pageRect.height - boundary - halfHeight);
+    const centerX = Math.max(minX, Math.min(maxX, event.clientX - pageRect.left - drag.offsetX));
+    const centerY = Math.max(minY, Math.min(maxY, event.clientY - pageRect.top - drag.offsetY));
+
+    updatePage(activePage.id, (current) => ({
+      ...current,
+      imagePlacementX: (centerX / pageRect.width) * 100,
+      imagePlacementY: (centerY / pageRect.height) * 100,
+    }));
+  }
+
+  function finishImageDrag(event: React.PointerEvent<HTMLElement>) {
+    if (imageDragRef.current?.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    imageDragRef.current = null;
+    setDraggingImage(false);
+  }
+
+  function toggleImageFullPage() {
+    updatePage(activePage.id, (page) => ({ ...page, imageFit: page.imageFit === "fullscreen" ? "contain" : "fullscreen" }));
+  }
+
+  function toggleImageLock() {
+    updatePage(activePage.id, (page) => ({ ...page, imageLocked: !page.imageLocked }));
+  }
+
+  function removeImage() {
+    updatePage(activePage.id, (page) => ({
+      ...page,
+      image: undefined,
+      imageName: undefined,
+      imageFit: undefined,
+      imagePositionX: undefined,
+      imagePositionY: undefined,
+      imagePlacementX: undefined,
+      imagePlacementY: undefined,
+      imageLocked: undefined,
+    }));
+    setSelectedImagePageId(null);
+    setDraggingImage(false);
+    imageDragRef.current = null;
   }
 
   function handleNotesKeyDown(event: KeyboardEvent<HTMLTextAreaElement>, chapterId: string, note: ChapterNote) {
@@ -363,8 +478,16 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
     requestAnimationFrame(() => textareaRef.current?.setSelectionRange(blockStart, blockStart + replacement.length));
   }
 
+  function handleChapterTitleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    textareaRef.current?.focus();
+    const end = textareaRef.current?.value.length ?? 0;
+    textareaRef.current?.setSelectionRange(end, end);
+  }
+
   return (
-    <div className="writer-view">
+    <div className="writer-view" onClickCapture={handleWorkspaceClick}>
       <header className="writer-header">
         <div className="writer-title-block">
           <span className="eyebrow">MY STORIES / CURRENT DRAFT</span>
@@ -396,7 +519,7 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
               <button className="page-count-button" onClick={() => setPagePickerOpen(true)} aria-label="Open page overview">Page <strong>{activePageIndex + 1}</strong> of {activeChapter.pages.length}</button>
               <button className="icon-button" disabled={activePageIndex === activeChapter.pages.length - 1} onClick={() => goToPage(activePageIndex + 1)} aria-label="Next page"><ArrowRight size={17} /></button>
             </div>
-            <span className="chapter-label">{activeChapter.title}</span>
+            <span className="chapter-label">{activeChapter.title.trim() || "Untitled chapter"}</span>
           </div>
 
           <article
@@ -405,13 +528,15 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
             style={{ "--paper": draft.style.paper, "--ink": draft.style.ink, "--page-accent": draft.style.accent } as React.CSSProperties}
           >
             <div className="page-rule" />
+            {draggingImage && selectedImagePageId === activePage.id && <div className="image-drag-boundary" aria-hidden="true" />}
             {activePageIndex === 0 && (
               <div className="chapter-page-heading" ref={chapterTitleRef}>
-                <span>Chapter {draft.chapters.findIndex((chapter) => chapter.id === activeChapter.id) + 1}</span>
+                <span>Chapter {activeChapterIndex + 1}</span>
                 <input
                   value={activeChapter.title}
                   onChange={(event) => updateChapter(activeChapter.id, (chapter) => ({ ...chapter, title: event.target.value }))}
-                  placeholder="Name this chapter"
+                  onKeyDown={handleChapterTitleKeyDown}
+                  placeholder="Chapter Title"
                   aria-label="Chapter title"
                 />
               </div>
@@ -427,20 +552,31 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
             />
             {activePage.image && (
               <figure
-                className={`page-image image-${activePage.imageFit ?? "contain"}`}
-                style={{ "--image-x": `${activePage.imagePositionX ?? 50}%`, "--image-y": `${activePage.imagePositionY ?? 50}%` } as React.CSSProperties}
-                onClick={() => setImageEditPageId(activePage.id)}
-                onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setImageEditPageId(activePage.id); }}
+                className={`page-image image-${activePage.imageFit ?? "contain"} ${selectedImagePageId === activePage.id ? "selected" : ""} ${activePage.imageLocked ? "locked" : ""}`}
+                style={{ "--image-x": `${activePage.imagePositionX ?? 50}%`, "--image-y": `${activePage.imagePositionY ?? 50}%`, "--image-placement-x": `${activePage.imagePlacementX ?? 50}%`, "--image-placement-y": `${activePage.imagePlacementY ?? 72}%` } as React.CSSProperties}
+                onPointerDown={handleImagePointerDown}
+                onPointerMove={handleImagePointerMove}
+                onPointerUp={finishImageDrag}
+                onPointerCancel={finishImageDrag}
+                onClick={(event) => { event.stopPropagation(); setSelectedImagePageId(activePage.id); }}
+                onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedImagePageId(activePage.id); }}
                 role="button"
                 tabIndex={0}
+                aria-label={`${activePage.imageName || "Attached story illustration"}${activePage.imageLocked ? ", locked" : ", movable"}`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={activePage.image} alt={activePage.imageName || "Attached story illustration"} />
+                <img src={activePage.image} alt={activePage.imageName || "Attached story illustration"} draggable={false} />
                 <figcaption>{activePage.imageName}</figcaption>
-                <button type="button" onClick={() => setImageEditPageId(activePage.id)} aria-label="Open image options"><Crop size={15} /><span>Image options</span></button>
+                {selectedImagePageId === activePage.id && (
+                  <div className="page-image-controls" role="toolbar" aria-label="Image options" onPointerDown={(event) => event.stopPropagation()}>
+                    <button type="button" className={activePage.imageFit === "fullscreen" ? "active" : ""} onClick={toggleImageFullPage} aria-label={activePage.imageFit === "fullscreen" ? "Restore image inside page" : "Make image full page"} aria-pressed={activePage.imageFit === "fullscreen"} title={activePage.imageFit === "fullscreen" ? "Restore image" : "Full page"}><Maximize2 size={16} /></button>
+                    <button type="button" className="danger" onClick={removeImage} aria-label="Delete image" title="Delete image"><Trash2 size={16} /></button>
+                    <button type="button" className={activePage.imageLocked ? "active" : ""} onClick={toggleImageLock} aria-label={activePage.imageLocked ? "Unlock image position" : "Lock image position"} aria-pressed={Boolean(activePage.imageLocked)} title={activePage.imageLocked ? "Unlock image" : "Lock image"}>{activePage.imageLocked ? <Lock size={16} /> : <Unlock size={16} />}</button>
+                  </div>
+                )}
               </figure>
             )}
-            <span className="printed-page-number">{activePageIndex + 1}</span>
+            <span className="printed-page-number">{activeBookPageNumber}</span>
           </article>
 
           <div className="below-page-actions">
@@ -461,6 +597,7 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
               {draft.chapters.map((chapter, index) => {
                 const isActive = chapter.id === activeChapter.id;
                 const isStarted = chapter.pages.some((page) => page.body.trim() || page.image);
+                const chapterName = chapter.title.trim() || "Untitled chapter";
                 return (
                   <div className="chapter-tree-item" key={chapter.id}>
                     <div
@@ -474,11 +611,11 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
                       <GripVertical className="drag-handle" size={17} />
                       <button className="chapter-main" onClick={() => chooseChapter(chapter)}>
                         <span className={`chapter-dot ${isStarted ? "started" : ""}`}>{isStarted ? <Check size={13} /> : index + 1}</span>
-                        <span><strong>{chapter.title}</strong><small>{chapter.pages.length} {chapter.pages.length === 1 ? "page" : "pages"}</small></span>
+                        <span><strong>{chapterName}</strong><small>{chapter.pages.length} {chapter.pages.length === 1 ? "page" : "pages"}</small></span>
                       </button>
                       <div className="chapter-row-actions">
-                        <button className={`chapter-note-button ${chapter.notes.length ? "has-note" : ""}`} onClick={() => addNote(chapter.id)} aria-label={`Add a private note to ${chapter.title}`}><Plus size={16} /></button>
-                        <button className="more-button" onClick={() => setChapterMenu(chapterMenu === chapter.id ? null : chapter.id)} aria-label={`Options for ${chapter.title}`} aria-expanded={chapterMenu === chapter.id}><MoreHorizontal size={18} /></button>
+                        <button className={`chapter-note-button ${chapter.notes.length ? "has-note" : ""}`} onClick={() => addNote(chapter.id)} aria-label={`Add a private note to ${chapterName}`}><Plus size={16} /></button>
+                        <button className="more-button" onClick={() => setChapterMenu(chapterMenu === chapter.id ? null : chapter.id)} aria-label={`Options for ${chapterName}`} aria-expanded={chapterMenu === chapter.id}><MoreHorizontal size={18} /></button>
                       </div>
                       {chapterMenu === chapter.id && (
                         <div className="chapter-menu">
@@ -487,19 +624,16 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
                         </div>
                       )}
                     </div>
-                    {chapter.notes.map((note) => {
+                    {isActive && chapter.notes.map((note) => {
                       const isOpen = openNoteId === note.id;
                       return (
-                        <div className={`chapter-note-branch ${isOpen ? "open" : "collapsed"}`} key={note.id}>
+                        <div className={`chapter-note-branch ${isOpen ? "open" : "collapsed"}`} key={note.id} data-note-id={note.id}>
                           <span className="note-branch-line" aria-hidden="true" />
                           {isOpen ? (
-                            <div
-                              className="chapter-note-card"
-                              onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpenNoteId(null); }}
-                            >
+                            <div className="chapter-note-card">
                               <div className="chapter-note-heading">
                                 <span><LockKeyhole size={13} /> Private note</span>
-                                <button onClick={() => deleteNote(chapter.id, note.id)} aria-label={`Delete note from ${chapter.title}`}><Trash2 size={14} /></button>
+                                <button data-delete-note onClick={() => setDeleteNoteTarget({ chapterId: chapter.id, noteId: note.id })} aria-label={`Delete note from ${chapterName}`}><Trash2 size={14} /></button>
                               </div>
                               <textarea
                                 autoFocus
@@ -516,9 +650,8 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
                               <button className="chapter-note-summary-open" onClick={() => setOpenNoteId(note.id)}>
                                 <LockKeyhole size={13} />
                                 <span>{note.body.trim().split("\n")[0] || "Empty private note"}</span>
-                                <small>Open</small>
                               </button>
-                              <button className="chapter-note-summary-delete" onClick={() => deleteNote(chapter.id, note.id)} aria-label={`Delete note from ${chapter.title}`}><Trash2 size={13} /></button>
+                              <button className="chapter-note-summary-delete" data-delete-note onClick={() => setDeleteNoteTarget({ chapterId: chapter.id, noteId: note.id })} aria-label={`Delete note from ${chapterName}`}><Trash2 size={13} /></button>
                             </div>
                           )}
                         </div>
@@ -543,7 +676,7 @@ export default function WriterWorkspace({ draft, setDraft, focusMode, setFocusMo
       {publishOpen && <PublishDialog draft={draft} setDraft={setDraft} onClose={() => setPublishOpen(false)} onPublished={() => { setPublishOpen(false); setPublishMessage("Published locally"); }} onPreview={() => { setPublishOpen(false); setPreviewOpen(true); }} />}
       {renameChapterId && <RenameChapterDialog chapter={draft.chapters.find((chapter) => chapter.id === renameChapterId)!} onClose={() => setRenameChapterId(null)} onRename={renameChapter} />}
       {deleteChapterId && <DeleteChapterDialog chapter={draft.chapters.find((chapter) => chapter.id === deleteChapterId)!} onClose={() => setDeleteChapterId(null)} onDelete={deleteChapter} />}
-      {imageEditPageId && <ImageEditorDialog page={activeChapter.pages.find((page) => page.id === imageEditPageId)} onClose={() => setImageEditPageId(null)} onUpdate={(updater) => updatePage(imageEditPageId, updater)} />}
+      {deleteNoteTarget && <DeleteNoteDialog chapter={draft.chapters.find((chapter) => chapter.id === deleteNoteTarget.chapterId)!} onClose={() => setDeleteNoteTarget(null)} onDelete={() => deleteNote(deleteNoteTarget.chapterId, deleteNoteTarget.noteId)} />}
       {pagePickerOpen && <PagePickerDialog chapter={activeChapter} activePageId={activePage.id} onClose={() => setPagePickerOpen(false)} onSelect={(index) => { goToPage(index); setPagePickerOpen(false); }} />}
     </div>
   );
@@ -556,14 +689,14 @@ function PagePickerDialog({ chapter, activePageId, onClose, onSelect }: { chapte
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="page-picker-title">
       <div className="page-picker-dialog" ref={panelRef}>
         <header>
-          <div><span className="eyebrow">PAGE OVERVIEW</span><h2 id="page-picker-title">{chapter.title}</h2><p>Select a page to continue writing there.</p></div>
+          <div><span className="eyebrow">PAGE OVERVIEW</span><h2 id="page-picker-title">{chapter.title.trim() || "Untitled chapter"}</h2><p>Select a page to continue writing there.</p></div>
           <button className="modal-close" onClick={onClose} aria-label="Close page overview"><X size={19} /></button>
         </header>
         <div className="page-picker-grid">
           {chapter.pages.map((page, index) => (
             <button className={page.id === activePageId ? "active" : ""} key={page.id} onClick={() => onSelect(index)} aria-label={`Go to page ${index + 1}`}>
               <span className="page-thumbnail">
-                {index === 0 && <strong>{chapter.title}</strong>}
+                {index === 0 && <strong>{chapter.title.trim() || "Untitled chapter"}</strong>}
                 <i>{page.body || "Blank page"}</i>
                 {page.image && (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -581,95 +714,43 @@ function PagePickerDialog({ chapter, activePageId, onClose, onSelect }: { chapte
 }
 
 function StoryPreview({ draft, onClose }: { draft: DraftStory; onClose: () => void }) {
+  const [chapterId, setChapterId] = useState(draft.activeChapterId);
   const panelRef = useRef<HTMLDivElement>(null);
   useModalKeyboard(panelRef, onClose);
+  const selectedChapterIndex = Math.max(0, draft.chapters.findIndex((chapter) => chapter.id === chapterId));
+  const selectedChapter = draft.chapters[selectedChapterIndex] ?? draft.chapters[0];
+  const pageOffset = draft.chapters.slice(0, selectedChapterIndex).reduce((total, chapter) => total + chapter.pages.length, 0);
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="story-preview-title">
       <div className="reader-modal" ref={panelRef}>
-        <header><div><span className="eyebrow">READER PREVIEW</span><h2 id="story-preview-title">{draft.title}</h2><p>{draft.genres.join(" · ")} · by Maya Santos</p></div><button className="icon-button" onClick={onClose} aria-label="Close story preview"><X size={19} /></button></header>
+        <header>
+          <div><span className="eyebrow">READER PREVIEW</span><h2 id="story-preview-title">{draft.title}</h2><p>{draft.genres.join(" · ")} · by Maya Santos</p></div>
+          <label className="reader-chapter-select">
+            <span>Preview chapter</span>
+            <select value={selectedChapter.id} onChange={(event) => setChapterId(event.target.value)}>
+              {draft.chapters.map((chapter, index) => <option value={chapter.id} key={chapter.id}>Chapter {index + 1}: {chapter.title.trim() || "Untitled chapter"}</option>)}
+            </select>
+          </label>
+          <button className="icon-button" onClick={onClose} aria-label="Close story preview"><X size={19} /></button>
+        </header>
         <div className="reader-pages" style={{ "--paper": draft.style.paper, "--ink": draft.style.ink, "--page-accent": draft.style.accent } as React.CSSProperties}>
-          {draft.chapters.flatMap((chapter) => chapter.pages.map((page, index) => ({ ...page, chapter: chapter.title, index }))).map((page, globalIndex) => (
+          {selectedChapter.pages.map((page, pageIndex) => (
             <article className="reader-page" key={page.id}>
-              {page.index === 0 && <><span className="reader-chapter-kicker">CHAPTER</span><h3>{page.chapter}</h3></>}
+              {pageIndex === 0 && <><span className="reader-chapter-kicker">CHAPTER {selectedChapterIndex + 1}</span><h3>{selectedChapter.title.trim() || "Untitled chapter"}</h3></>}
               <p>{page.body || "This page is waiting to be written."}</p>
               {page.image && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   className={`reader-page-image image-${page.imageFit ?? "contain"}`}
-                  style={{ objectPosition: `${page.imagePositionX ?? 50}% ${page.imagePositionY ?? 50}%` }}
+                  style={{ objectPosition: `${page.imagePositionX ?? 50}% ${page.imagePositionY ?? 50}%`, "--image-placement-x": `${page.imagePlacementX ?? 50}%`, "--image-placement-y": `${page.imagePlacementY ?? 72}%` } as React.CSSProperties}
                   src={page.image}
                   alt="Story illustration"
                 />
               )}
-              <span>{globalIndex + 1}</span>
+              <span>{pageOffset + pageIndex + 1}</span>
             </article>
           ))}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function ImageEditorDialog({ page, onClose, onUpdate }: { page?: StoryPage; onClose: () => void; onUpdate: (updater: (page: StoryPage) => StoryPage) => void }) {
-  const [fit, setFit] = useState<NonNullable<StoryPage["imageFit"]>>(page?.imageFit ?? "contain");
-  const [positionX, setPositionX] = useState(page?.imagePositionX ?? 50);
-  const [positionY, setPositionY] = useState(page?.imagePositionY ?? 50);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ x: number; y: number; positionX: number; positionY: number } | null>(null);
-  useModalKeyboard(panelRef, onClose);
-  if (!page?.image) return null;
-
-  function clamp(value: number) {
-    return Math.max(0, Math.min(100, value));
-  }
-
-  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
-    const drag = dragRef.current;
-    if (!drag || fit === "contain") return;
-    setPositionX(clamp(drag.positionX + (event.clientX - drag.x) * 0.35));
-    setPositionY(clamp(drag.positionY + (event.clientY - drag.y) * 0.35));
-  }
-
-  function save() {
-    onUpdate((current) => ({ ...current, imageFit: fit, imagePositionX: positionX, imagePositionY: positionY }));
-    onClose();
-  }
-
-  function remove() {
-    onUpdate((current) => ({ ...current, image: undefined, imageName: undefined, imageFit: undefined, imagePositionX: undefined, imagePositionY: undefined }));
-    onClose();
-  }
-
-  return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="image-editor-title">
-      <div className="image-editor-dialog" ref={panelRef}>
-        <button className="modal-close" onClick={onClose} aria-label="Close image options"><X size={19} /></button>
-        <span className="eyebrow">PAGE IMAGE</span>
-        <h2 id="image-editor-title">Position your image</h2>
-        <p>Choose how the image sits on the page. In cropped modes, drag the preview to move its focal point.</p>
-        <div
-          className={`image-crop-preview image-${fit}`}
-          style={{ "--image-x": `${positionX}%`, "--image-y": `${positionY}%` } as React.CSSProperties}
-          onPointerDown={(event) => { dragRef.current = { x: event.clientX, y: event.clientY, positionX, positionY }; event.currentTarget.setPointerCapture(event.pointerId); }}
-          onPointerMove={handlePointerMove}
-          onPointerUp={() => { dragRef.current = null; }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={page.image} alt="Image positioning preview" draggable={false} />
-          {fit !== "contain" && <span><Move size={15} /> Drag to reposition</span>}
-        </div>
-        <div className="image-fit-options" role="group" aria-label="Image layout">
-          <button className={fit === "contain" ? "active" : ""} onClick={() => setFit("contain")}><ImagePlus size={17} /><span><strong>Fit</strong><small>Inside margins</small></span></button>
-          <button className={fit === "crop" ? "active" : ""} onClick={() => setFit("crop")}><Crop size={17} /><span><strong>Crop</strong><small>Fill a frame</small></span></button>
-          <button className={fit === "fullscreen" ? "active" : ""} onClick={() => setFit("fullscreen")}><Maximize2 size={17} /><span><strong>Full page</strong><small>Ignore margins</small></span></button>
-        </div>
-        {fit !== "contain" && (
-          <div className="image-position-controls">
-            <label>Horizontal position<input type="range" min="0" max="100" value={positionX} onChange={(event) => setPositionX(Number(event.target.value))} /></label>
-            <label>Vertical position<input type="range" min="0" max="100" value={positionY} onChange={(event) => setPositionY(Number(event.target.value))} /></label>
-          </div>
-        )}
-        <div className="dialog-actions image-dialog-actions"><button className="danger-text-button" onClick={remove}><Trash2 size={15} /> Remove image</button><span /><button className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" onClick={save}>Apply</button></div>
       </div>
     </div>
   );
@@ -766,6 +847,22 @@ function DeleteChapterDialog({ chapter, onClose, onDelete }: { chapter: Chapter;
         <h2 id="delete-chapter-title">Delete “{chapter.title}”?</h2>
         <p id="delete-chapter-description">Its pages, images, and private notes will be removed from this local prototype.</p>
         <div className="dialog-actions"><button className="secondary-button" onClick={onClose}>Keep chapter</button><button className="danger-button" onClick={() => onDelete(chapter)}>Delete chapter</button></div>
+      </div>
+    </div>
+  );
+}
+
+function DeleteNoteDialog({ chapter, onClose, onDelete }: { chapter: Chapter; onClose: () => void; onDelete: () => void }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalKeyboard(panelRef, onClose);
+  return (
+    <div className="modal-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="delete-note-title" aria-describedby="delete-note-description">
+      <div className="confirm-dialog" ref={panelRef}>
+        <button className="modal-close" onClick={onClose} aria-label="Close delete note dialog"><X size={19} /></button>
+        <span className="confirm-icon danger"><Trash2 size={20} /></span>
+        <h2 id="delete-note-title">Delete this private note?</h2>
+        <p id="delete-note-description">This note from “{chapter.title.trim() || "Untitled chapter"}” will be permanently removed.</p>
+        <div className="dialog-actions"><button className="secondary-button" onClick={onClose}>Keep note</button><button className="danger-button" onClick={onDelete}>Delete note</button></div>
       </div>
     </div>
   );

@@ -77,6 +77,7 @@ export default function WritersRoom() {
   const [editBookId, setEditBookId] = useState<string | null>(null);
   const [deleteBookId, setDeleteBookId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [saveStatus, setSaveStatus] = useState("Autosave on");
 
   const navigate = useCallback((nextView: View, bookId?: string) => {
     setView(nextView);
@@ -153,12 +154,16 @@ export default function WritersRoom() {
 
   useEffect(() => {
     if (!hydrated) return;
-    try {
-      window.localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
-      window.localStorage.setItem(ACTIVE_BOOK_KEY, activeBookId);
-    } catch {
-      // Large local image previews may exceed the browser's prototype storage allowance.
-    }
+    const timer = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
+        window.localStorage.setItem(ACTIVE_BOOK_KEY, activeBookId);
+        setSaveStatus("Saved just now");
+      } catch {
+        setSaveStatus("Couldn’t save locally");
+      }
+    }, 450);
+    return () => window.clearTimeout(timer);
   }, [activeBookId, books, hydrated]);
 
   useEffect(() => {
@@ -176,6 +181,7 @@ export default function WritersRoom() {
   );
 
   const setDraft = useCallback<Dispatch<SetStateAction<DraftStory>>>((update) => {
+    setSaveStatus("Saving…");
     setBooks((currentBooks) => currentBooks.map((book) => {
       if (book.id !== activeBookId) return book;
       const updated = typeof update === "function" ? update(book) : update;
@@ -207,7 +213,7 @@ export default function WritersRoom() {
       activeChapterId: chapterId,
       activePageId: pageId,
       style: pageStyles[0],
-      chapters: [{ id: chapterId, title: "Chapter 1", notes: [], pages: [{ id: pageId, body: "" }] }],
+      chapters: [{ id: chapterId, title: "", notes: [], pages: [{ id: pageId, body: "" }] }],
     };
     setBooks((current) => [book, ...current]);
     setNewBookOpen(false);
@@ -238,7 +244,7 @@ export default function WritersRoom() {
       <aside className="sidebar" aria-label="Primary navigation">
         <button className="brand" onClick={() => navigate("home")} aria-label="Go home">
           <span className="brand-mark"><BookOpen size={25} /></span>
-          <span className="brand-copy">Writers&apos; Room<small>shape a story</small></span>
+          <span className="brand-copy">Draftly<small>WRITE YOUR OWN</small></span>
         </button>
 
         <nav className="side-nav">
@@ -289,7 +295,7 @@ export default function WritersRoom() {
           <MyStoriesLibrary books={books} activeBookId={activeBookId} query={searchQuery} onOpen={openBook} onEdit={setEditBookId} onDelete={setDeleteBookId} onNewBook={() => setNewBookOpen(true)} />
         )}
         {view === "write" && activeDraft && (
-          <WriterWorkspace draft={activeDraft} setDraft={setDraft} focusMode={focusMode} setFocusMode={setFocusMode} onEditBook={() => setEditBookId(activeDraft.id)} onDeleteBook={() => setDeleteBookId(activeDraft.id)} />
+          <WriterWorkspace key={activeDraft.id} draft={activeDraft} setDraft={setDraft} saveStatus={saveStatus} focusMode={focusMode} setFocusMode={setFocusMode} onEditBook={() => setEditBookId(activeDraft.id)} onDeleteBook={() => setDeleteBookId(activeDraft.id)} />
         )}
         {showCommunity && activeDraft && (
           <CommunityView

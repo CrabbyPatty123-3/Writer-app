@@ -1,4 +1,4 @@
-# Writers' Room prototype
+# Draftly prototype
 
 A local, interactive prototype for a page-first book writing and publishing app.
 
@@ -27,4 +27,3 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Prototype boundaries
 
 All state is stored in the browser. Publishing and community interactions are simulated and do not send data to a server. Image attachments are limited to 2.5 MB to stay within local browser storage constraints.
-

@@ -8,6 +8,9 @@ export type StoryPage = {
   imageFit?: "contain" | "crop" | "fullscreen";
   imagePositionX?: number;
   imagePositionY?: number;
+  imagePlacementX?: number;
+  imagePlacementY?: number;
+  imageLocked?: boolean;
 };
 
 export type ChapterNote = {
